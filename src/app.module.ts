@@ -12,6 +12,7 @@ import { OutboxEvent } from './entities/outbox-event.entity';
 import { BalanceModule } from './balance/balance.module';
 import { TimeOffRequestModule } from './time-off-request/time-off-request.module';
 import { HcmSyncModule } from './hcm-sync/hcm-sync.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { HcmSyncModule } from './hcm-sync/hcm-sync.module';
     BalanceModule,
     TimeOffRequestModule,
     HcmSyncModule,
+    ReconciliationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
