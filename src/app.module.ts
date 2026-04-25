@@ -11,6 +11,7 @@ import { BalanceAuditLog } from './entities/balance-audit-log.entity';
 import { OutboxEvent } from './entities/outbox-event.entity';
 import { BalanceModule } from './balance/balance.module';
 import { TimeOffRequestModule } from './time-off-request/time-off-request.module';
+import { HcmSyncModule } from './hcm-sync/hcm-sync.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { TimeOffRequestModule } from './time-off-request/time-off-request.module
     }),
     BalanceModule,
     TimeOffRequestModule,
+    HcmSyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],
