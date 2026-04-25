@@ -21,11 +21,13 @@ async function runSeed() {
   console.log('Database connection initialized.');
 
   // Cleanup existing data to start fresh
+  await AppDataSource.query('PRAGMA foreign_keys = OFF;');
   const entities = AppDataSource.entityMetadatas;
   for (const entity of entities) {
     const repository = AppDataSource.getRepository(entity.name);
     await repository.query(`DELETE FROM ${entity.tableName};`);
   }
+  await AppDataSource.query('PRAGMA foreign_keys = ON;');
   console.log('Old data cleared.');
 
   // Populate Test Fixture Data as per test-suite.md (§8)
@@ -52,10 +54,12 @@ async function runSeed() {
 
   if (!keepData) {
     console.log('Cleaning up data as --keep was not provided...');
+    await AppDataSource.query('PRAGMA foreign_keys = OFF;');
     for (const entity of entities) {
         const repository = AppDataSource.getRepository(entity.name);
         await repository.query(`DELETE FROM ${entity.tableName};`);
     }
+    await AppDataSource.query('PRAGMA foreign_keys = ON;');
     console.log('Database cleaned successfully.');
   }
 
