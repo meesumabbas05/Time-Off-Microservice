@@ -13,6 +13,7 @@ import { BalanceModule } from './balance/balance.module';
 import { TimeOffRequestModule } from './time-off-request/time-off-request.module';
 import { HcmSyncModule } from './hcm-sync/hcm-sync.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
     TimeOffRequestModule,
     HcmSyncModule,
     ReconciliationModule,
+    SecurityModule,
   ],
   controllers: [AppController],
   providers: [AppService],
