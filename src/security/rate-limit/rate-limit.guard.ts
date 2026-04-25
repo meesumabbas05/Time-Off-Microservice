@@ -1,4 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { RateLimit } from '../../entities/rate-limit.entity';
 
 export class TooManyRequestsException extends HttpException {
   constructor() {
@@ -8,12 +11,15 @@ export class TooManyRequestsException extends HttpException {
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  // Simple in-memory rate limiter: Map<userId, { count: number, resetAt: number }>
-  private limitStore = new Map<string, { count: number, resetAt: number }>();
   private readonly MAX_REQUESTS = 10;
   private readonly WINDOW_MS = 60000; // 1 minute
 
-  canActivate(context: ExecutionContext): boolean {
+  constructor(
+    @InjectRepository(RateLimit)
+    private rateLimitRepo: Repository<RateLimit>,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
     
@@ -21,11 +27,15 @@ export class RateLimitGuard implements CanActivate {
     if (!user || !user.userId) return true;
 
     const now = Date.now();
-    const record = this.limitStore.get(user.userId);
+    const key = `SUBMISSION:${user.userId}`;
 
-    if (!record || now > record.resetAt) {
-      // Create new window
-      this.limitStore.set(user.userId, { count: 1, resetAt: now + this.WINDOW_MS });
+    let record = await this.rateLimitRepo.findOne({ where: { key } });
+    if (!record || now > Number(record.reset_at)) {
+      await this.rateLimitRepo.upsert({
+        key,
+        count: 1,
+        reset_at: now + this.WINDOW_MS,
+      }, ['key']);
       return true;
     }
 
@@ -33,7 +43,7 @@ export class RateLimitGuard implements CanActivate {
       throw new TooManyRequestsException();
     }
 
-    record.count++;
+    await this.rateLimitRepo.increment({ key }, 'count', 1);
     return true;
   }
 }

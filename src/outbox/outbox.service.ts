@@ -5,6 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { OutboxEvent, OutboxEventStatus } from '../entities/outbox-event.entity';
 import { TimeOffRequest } from '../entities/time-off-request.entity';
 import { LeaveBalance } from '../entities/leave-balance.entity';
+import { BalanceAuditLog, AuditSource } from '../entities/balance-audit-log.entity';
 import { OutboxWorker, HcmClientLike, AlertLike, OutboxEventLike } from './outbox.worker';
 
 @Injectable()
@@ -19,6 +20,8 @@ export class OutboxService {
     private readonly requestRepo: Repository<TimeOffRequest>,
     @InjectRepository(LeaveBalance)
     private readonly balanceRepo: Repository<LeaveBalance>,
+    @InjectRepository(BalanceAuditLog)
+    private readonly auditLogRepo: Repository<BalanceAuditLog>,
     @Inject('HCM_CLIENT') hcmClient: HcmClientLike,
     @Inject('ALERT_SERVICE') alertService: AlertLike,
   ) {
@@ -30,16 +33,17 @@ export class OutboxService {
     const events = await this.outboxRepo.find({
       where: { status: OutboxEventStatus.PENDING },
       take: 50,
+      order: { created_at: 'ASC' }
     });
 
     if (events.length === 0) return;
 
     this.logger.log(`Processing ${events.length} outbox events...`);
 
-    // Process events and capture results
     for (const event of events) {
         const eventLike: OutboxEventLike = {
             id: event.id,
+            tenant_id: event.tenant_id,
             event_type: event.event_type as any,
             status: event.status as any,
             attempt_count: event.attempt_count,
@@ -49,42 +53,94 @@ export class OutboxService {
         };
 
         try {
-            const hcmRequestId = await this.worker.processEvent(eventLike) as any;
-            
-            // Sync status/attempts
-            event.status = eventLike.status as OutboxEventStatus;
-            event.attempt_count = eventLike.attempt_count;
-            event.last_attempted = new Date();
-
-            if (event.status === OutboxEventStatus.DONE && hcmRequestId) {
-                const requestId = event.payload.requestId;
-                const request = await this.requestRepo.findOne({ where: { id: requestId } });
-                if (request) {
-                    request.hcm_request_id = hcmRequestId;
-                    await this.requestRepo.save(request);
-
-                    // Also decrement local balance if it was a deduction
-                    if (event.event_type === 'HCM_DEDUCT') {
-                        const balance = await this.balanceRepo.findOne({
-                            where: { 
-                                tenant_id: request.tenant_id, 
-                                employee_id: request.employee_id,
-                                location_id: request.location_id,
-                                leave_type: request.leave_type
-                            }
-                        });
-                        if (balance) {
-                            balance.balance_days = Number(balance.balance_days) - Number(request.days_requested);
-                            await this.balanceRepo.save(balance);
-                        }
-                    }
-                }
+            const hcmRequestId = await this.worker.processEvent(eventLike);
+            if (hcmRequestId) {
+                event.hcm_request_id = hcmRequestId;
             }
         } catch (err) {
             this.logger.error(`Error processing event ${event.id}: ${err.message}`);
+        } finally {
+            event.status = eventLike.status as OutboxEventStatus;
+            event.attempt_count = eventLike.attempt_count;
+            event.last_attempted = new Date();
         }
-    }
 
-    await this.outboxRepo.save(events);
+        if (event.status === OutboxEventStatus.DONE) {
+            const requestId = event.payload.requestId;
+            const request = await this.requestRepo.findOne({ where: { id: requestId } });
+            
+            if (request) {
+                if (event.hcm_request_id) {
+                    request.hcm_request_id = event.hcm_request_id;
+                }
+
+                if (event.event_type === 'HCM_DEDUCT') {
+                    const balance = await this.balanceRepo.findOne({
+                        where: { 
+                            tenant_id: request.tenant_id, 
+                            employee_id: request.employee_id,
+                            location_id: request.location_id,
+                            leave_type: request.leave_type
+                        }
+                    });
+                    if (balance) {
+                        const previousDays = Number(balance.balance_days);
+                        const requestedDays = Number(request.days_requested);
+                        const newDays = previousDays - requestedDays;
+
+                        balance.balance_days = newDays;
+                        await this.balanceRepo.save(balance);
+
+                        await this.auditLogRepo.save(this.auditLogRepo.create({
+                            tenant_id: request.tenant_id,
+                            employee_id: request.employee_id,
+                            location_id: request.location_id,
+                            leave_type: request.leave_type,
+                            previous_days: previousDays,
+                            new_days: newDays,
+                            delta: -requestedDays,
+                            source: AuditSource.APPROVAL,
+                            reference_id: request.id,
+                            actor: 'SYSTEM',
+                        }));
+                    }
+                }
+
+                if (event.event_type === 'HCM_CREDIT') {
+                    const balance = await this.balanceRepo.findOne({
+                        where: { 
+                            tenant_id: request.tenant_id, 
+                            employee_id: request.employee_id,
+                            location_id: request.location_id,
+                            leave_type: request.leave_type
+                        }
+                    });
+                    if (balance) {
+                        const previousDays = Number(balance.balance_days);
+                        const creditedDays = Number(event.payload.daysRequested);
+                        const newDays = previousDays + creditedDays;
+
+                        balance.balance_days = newDays;
+                        await this.balanceRepo.save(balance);
+
+                        await this.auditLogRepo.save(this.auditLogRepo.create({
+                            tenant_id: request.tenant_id,
+                            employee_id: request.employee_id,
+                            location_id: request.location_id,
+                            leave_type: request.leave_type,
+                            previous_days: previousDays,
+                            new_days: newDays,
+                            delta: creditedDays,
+                            source: AuditSource.CANCELLATION,
+                            reference_id: request.id,
+                            actor: 'SYSTEM',
+                        }));
+                    }
+                }
+                await this.requestRepo.save(request);
+            }
+        }
+        await this.outboxRepo.save(event);
+    }
   }
 }

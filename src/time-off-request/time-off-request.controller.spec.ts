@@ -6,6 +6,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { User } from '../entities/user.entity';
 import { TimeOffRequest } from '../entities/time-off-request.entity';
 
+import { RateLimit } from '../entities/rate-limit.entity';
+
 describe('TimeOffRequestController', () => {
   let controller: TimeOffRequestController;
 
@@ -17,6 +19,7 @@ describe('TimeOffRequestController', () => {
         { provide: JwtService, useValue: {} },
         { provide: getRepositoryToken(User), useValue: {} },
         { provide: getRepositoryToken(TimeOffRequest), useValue: {} },
+        { provide: getRepositoryToken(RateLimit), useValue: {} },
       ],
     }).compile();
 

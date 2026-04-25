@@ -6,6 +6,7 @@ import { OutboxEvent, OutboxEventStatus, OutboxEventType } from '../entities/out
 import { Tenant } from '../entities/tenant.entity';
 import { LeaveBalance } from '../entities/leave-balance.entity';
 import { User } from '../entities/user.entity';
+import { BalanceAuditLog, AuditSource } from '../entities/balance-audit-log.entity';
 
 export class InvalidWebhookSignatureException extends HttpException {
   constructor() { super('Invalid webhook signature', HttpStatus.UNAUTHORIZED); }
@@ -26,6 +27,8 @@ export class HcmSyncService {
     private outboxRepo: Repository<OutboxEvent>,
     @InjectRepository(Tenant)
     private tenantRepo: Repository<Tenant>,
+    @InjectRepository(BalanceAuditLog)
+    private auditLogRepo: Repository<BalanceAuditLog>,
     @Inject('HCM_CLIENT')
     private httpClient: any,
   ) {}
@@ -69,6 +72,7 @@ export class HcmSyncService {
         }
 
         // Upsert
+        const previousDays = existing ? Number(existing.balance_days) : 0.00;
         const balance = existing || new LeaveBalance();
         balance.tenant_id = tenantId;
         balance.employee_id = employeeId;
@@ -78,6 +82,21 @@ export class HcmSyncService {
         balance.hcm_last_synced = asOfDate;
 
         await trxManager.save(LeaveBalance, balance);
+
+        // Audit Log
+        const auditLog = trxManager.create(BalanceAuditLog, {
+          tenant_id: tenantId,
+          employee_id: employeeId,
+          location_id: locationId,
+          leave_type: leaveType,
+          previous_days: previousDays,
+          new_days: Number(days),
+          delta: Number((Number(days) - previousDays).toFixed(2)),
+          source: AuditSource.BATCH_SYNC,
+          actor: 'HCM',
+        });
+        await trxManager.save(BalanceAuditLog, auditLog);
+
         synced++;
       }
 
@@ -107,6 +126,7 @@ export class HcmSyncService {
           continue;
         }
 
+        const previousDays = existing ? Number(existing.balance_days) : 0.00;
         const balance = existing || new LeaveBalance();
         balance.tenant_id = tenantId;
         balance.employee_id = employeeId;
@@ -116,6 +136,21 @@ export class HcmSyncService {
         balance.hcm_last_synced = asOfDate;
 
         await trxManager.save(LeaveBalance, balance);
+
+        // Audit Log
+        const auditLog = trxManager.create(BalanceAuditLog, {
+          tenant_id: tenantId,
+          employee_id: employeeId,
+          location_id: locationId,
+          leave_type: leaveType,
+          previous_days: previousDays,
+          new_days: Number(days),
+          delta: Number((Number(days) - previousDays).toFixed(2)),
+          source: AuditSource.MANUAL_SYNC,
+          actor: 'SYSTEM', // Usually triggered by an admin or system
+        });
+        await trxManager.save(BalanceAuditLog, auditLog);
+
         synced++;
       }
 
@@ -179,11 +214,14 @@ export class HcmSyncService {
     event.last_attempted = new Date();
 
     try {
-      const resp = await this.httpClient.postRequest(event.payload);
-      if (resp && resp.status === 201) {
+      const resp = await (event.event_type === OutboxEventType.HCM_DEDUCT 
+        ? this.httpClient.deduct(event.tenant_id, event.payload, event.idempotency_key)
+        : this.httpClient.credit(event.tenant_id, event.payload, event.idempotency_key));
+      
+      if (resp && (resp.status === 201 || resp.status === 200)) {
         event.status = OutboxEventStatus.DONE;
       } else {
-         throw new Error('Non-201 response');
+         throw new Error('Unexpected HCM response');
       }
     } catch (error) {
       if (event.attempt_count >= 5) {

@@ -10,6 +10,29 @@ export async function setupIntegrationTest(overrides?: { provide: any, useValue:
     imports: [AppModule],
   });
 
+  const defaultOverrides = [
+    { 
+      provide: 'HCM_CLIENT', 
+      useValue: { 
+        getBalance: jest.fn().mockResolvedValue({ days: 10, asOf: new Date() }),
+        deduct: jest.fn().mockResolvedValue({ status: 201, data: { hcm_request_id: 'HCM-MOCK' } }),
+        credit: jest.fn().mockResolvedValue({ status: 201, data: {} }),
+        fetchBalances: jest.fn().mockResolvedValue([])
+      } 
+    },
+    {
+      provide: 'ALERT_SERVICE',
+      useValue: { notify: jest.fn() }
+    }
+  ];
+
+  defaultOverrides.forEach(o => {
+    const isOverridden = overrides?.some(ov => ov.provide === o.provide);
+    if (!isOverridden) {
+      builder.overrideProvider(o.provide).useValue(o.useValue);
+    }
+  });
+
   if (overrides) {
     overrides.forEach(o => {
       builder.overrideProvider(o.provide).useValue(o.useValue);

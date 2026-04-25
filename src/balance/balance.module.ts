@@ -10,13 +10,6 @@ import { TimeOffRequest } from '../entities/time-off-request.entity';
   imports: [TypeOrmModule.forFeature([LeaveBalance, BalanceAuditLog, TimeOffRequest])],
   providers: [
     BalanceService,
-    {
-      provide: 'HCM_CLIENT',
-      useValue: {
-        postRequest: async () => ({ status: 201 }),
-        getBalance: async () => ({ days: 10, asOf: new Date().toISOString() }),
-      },
-    },
   ],
   controllers: [BalanceController],
   exports: [BalanceService],

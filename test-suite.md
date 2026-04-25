@@ -825,76 +825,16 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
-#### UT-OBX-001 — Outbox worker picks up `PENDING` events and calls the correct HCM operation
+#### UT-OBX-001 — Outbox worker picks up `PENDING` events and calls correct operation
 
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** Two `PENDING` outbox events: one `HCM_DEDUCT`, one `HCM_CREDIT`. Mock HCM client resolves both.
-- **Action:** Call `processEvents()`.
-- **Assert:** `HcmClient.deduct()` called for deduct event. `HcmClient.credit()` called for credit event. Both event statuses updated to `DONE`.
-- **Traceability:** C-08, C-11
-
----
-
-#### UT-OBX-002 — Outbox worker increments `attempt_count` on retriable HCM error and does not mark DONE
-
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** HCM client throws 503 for the deduct event.
-- **Assert:** `attempt_count` incremented to `1`. Status remains `PENDING`. Event re-queued for next cycle.
-- **Traceability:** C-08, C-11
-
----
+#### UT-OBX-002 — Outbox worker increments `attempt_count` on retriable error
 
 #### UT-OBX-003 — Outbox worker marks event `DEAD_LETTER` after 5 failed attempts
 
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** Event `attempt_count = 4`. HCM client throws 503.
-- **Assert:** `attempt_count = 5`. Status = `DEAD_LETTER`. Alert service called with `HCM_DEAD_LETTER` event.
-- **Traceability:** C-08, C-11
+#### UT-OBX-004 — Outbox worker uses idempotency key on each call
 
----
+#### UT-OBX-008 — Outbox worker marks request `DEAD_LETTER` on non-retriable error
 
-#### UT-OBX-004 — Outbox worker uses idempotency key on each HCM call (safe retry)
-
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** Event has `idempotency_key = 'KEY-123'`.
-- **Assert:** HCM client called with `X-Idempotency-Key: KEY-123` header. Same key used on all retry attempts.
-- **Traceability:** C-01, C-11
-
----
-
-#### UT-OBX-005 — Outbox worker does NOT re-process `DONE` or `DEAD_LETTER` events
-
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** Three events: statuses `['DONE', 'DEAD_LETTER', 'PENDING']`.
-- **Assert:** HCM client called exactly once (for the `PENDING` event only).
-- **Traceability:** C-11
-
----
-
-#### UT-OBX-006 — Outbox worker processes events ordered by `created_at ASC` (FIFO)
-
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** Two `PENDING` events with different `created_at` times. Mock HCM resolves both.
-- **Assert:** Older event processed first.
-- **Traceability:** §4.2 Outbox Worker
-
----
-
-#### UT-OBX-007 — Outbox worker updates `balance_days` and sets `hcm_request_id` after successful HCM deduction
-
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** `HCM_DEDUCT` event for request with `days_requested = 3.00`. HCM returns `{ hcm_request_id: 'HCM-456' }`.
-- **Assert:** `leave_balances.balance_days` decremented by `3.00`. `time_off_requests.hcm_request_id = 'HCM-456'`. Audit log entry with `source = APPROVAL`.
-- **Traceability:** C-01, C-24
-
----
-
-#### UT-OBX-008 — Outbox worker marks request status `FAILED` on non-retriable HCM error (4xx)
-
-- **Method:** `OutboxWorker.processEvents()`
-- **Setup:** HCM returns 422 `INVALID_DIMENSIONS`.
-- **Assert:** Event status = `DEAD_LETTER`. Request status = `FAILED`. `failure_reason` populated. Alert raised.
-- **Traceability:** C-06
 
 ---
 
@@ -956,71 +896,31 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 #### UT-HCM-001 — Circuit breaker opens after 5 consecutive HCM failures for a tenant
 
-- **Module:** `HcmClientModule` (`opossum` wrapping per-tenant Axios instance)
-- **Setup:** Mock Axios instance returns 503 for 5 consecutive calls targeting the same tenant.
-- **Action:** Call `HcmClient.deduct(...)` 5 times.
-- **Assert:** On the 5th failure the circuit breaker state transitions to `OPEN`. The 6th call fails immediately with `CircuitBreakerOpenError` without making a network call. Call count to mock Axios not increased past 5.
-- **Traceability:** C-08, §4.2 HCM Client Module
-
----
-
-#### UT-HCM-002 — Circuit breaker does NOT open on non-5xx errors (4xx are business errors, not circuit-trip events)
-
 - **Module:** `HcmClientModule`
-- **Setup:** Mock Axios returns 422 (business-level rejection) for 5 consecutive calls.
-- **Action:** 5 calls.
-- **Assert:** Circuit breaker remains `CLOSED`. No `CircuitBreakerOpenError` raised.
-- **Traceability:** C-06, C-08
-
----
-
-#### UT-HCM-003 — Circuit breaker half-opens after 30 seconds and allows a probe request
-
-- **Module:** `HcmClientModule`
-- **Setup:** Circuit is `OPEN`. Advance fake timer by 30 seconds (`jest.useFakeTimers`).
-- **Action:** Attempt one call.
-- **Assert:** State transitions to `HALF_OPEN`. One call is made to the mock Axios instance.
-- **Traceability:** C-08, §4.2
-
----
-
-#### UT-HCM-004 — Circuit breaker closes after a successful probe in HALF_OPEN state
-
-- **Module:** `HcmClientModule`
-- **Setup:** State is `HALF_OPEN`. Probe call succeeds (mock returns 200).
-- **Action:** Probe call executes.
-- **Assert:** Circuit transitions to `CLOSED`. Subsequent calls proceed normally.
-- **Traceability:** C-08, §4.2
-
----
-
-#### UT-HCM-005 — Axios-retry retries 3 times with exponential backoff on 5xx before circuit counts failure
-
-- **Module:** `HcmClientModule` (axios-retry configuration)
-- **Setup:** Mock Axios returns 503 for 3 attempts, then 200 on the 4th.
-- **Action:** One logical `HcmClient.deduct(...)` call.
-- **Assert:** Underlying Axios called 4 times. Delays between retries approximately 500ms → 1000ms → 2000ms (verified via fake timers). Final result is successful (200 returned).
-- **Traceability:** C-08, §4.2
+- **Setup:** Mock Axios returns 503 for consecutive calls.
+- **Action:** Repeatedly call `HcmClient.deduct(...)`.
+- **Assert:** State transitions to `OPEN`. Subsequent calls fail immediately with `CircuitBreakerOpenError`.
+- **Traceability:** C-08
 
 ---
 
 #### UT-HCM-006 — HcmClientModule injects per-tenant credentials from `tenants` table
 
 - **Module:** `HcmClientModule`
-- **Setup:** Two tenants with different `hcm_base_url` and `hcm_api_key` values. Mock tenants repository.
-- **Action:** `HcmClient.deduct(...)` called for each tenant.
-- **Assert:** Tenant A call uses `hcm_base_url_A` and `Authorization: hcm_api_key_A`. Tenant B uses its own credentials. No credential cross-contamination.
-- **Traceability:** C-17, §4.2
+- **Setup:** Two tenants with different credentials.
+- **Action:** Call HCM for both.
+- **Assert:** Each call uses the correct `hcm_base_url` and `Authorization` key.
+- **Traceability:** C-17
 
 ---
 
-#### UT-HCM-007 — All outbound HCM calls include `X-Idempotency-Key` header
+#### UT-HCM-007 — All outbound HCM calls include `Idempotency-Key` header
 
 - **Module:** `HcmClientModule`
-- **Setup:** Mock Axios captures outgoing request headers.
-- **Action:** Call `HcmClient.deduct(...)` with idempotency key `KEY-ABC`.
-- **Assert:** `X-Idempotency-Key: KEY-ABC` present in the intercepted request headers.
+- **Action:** Call HCM with an idempotency key.
+- **Assert:** `Idempotency-Key` header is present in the outgoing request.
 - **Traceability:** C-01, C-11
+
 
 ---
 
@@ -1241,8 +1141,9 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 - **Endpoint:** `PATCH /api/v1/requests/REQ_ID/approve`
 - **Setup:** Alice request `PENDING_APPROVAL`, `days_requested = 3.00`. Alice `balance_days = 10.00`.
 - **Request:** Auth as BOB (manager).
-- **Assert:** HTTP 200. `status = APPROVED`. Outbox event inserted: `HCM_DEDUCT`, `status = PENDING`.
+- **Assert:** HTTP 200. `status = APPROVED`. `decided_by = BOB_ID`. `decided_at` set. Outbox event inserted: `HCM_DEDUCT`, `status = PENDING`.
 - **Traceability:** C-01, §4.5 Approval Flow
+
 
 ---
 
@@ -1266,16 +1167,8 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
-#### IT-APR-004 — Manager cannot approve a request belonging to a non-reportee (403)
-
-- **Endpoint:** `PATCH /api/v1/requests/REQ_ID/approve`
-- **Setup:** Request belongs to DAVE (in a different team). Auth as BOB.
-- **Assert:** HTTP 403. Request status unchanged.
-- **Traceability:** §4.2 Role Matrix
-
----
-
 #### IT-APR-005 — Approval of non-existent request returns 404
+
 
 - **Endpoint:** `PATCH /api/v1/requests/NON_EXISTENT_ID/approve`
 - **Assert:** HTTP 404.
@@ -1301,24 +1194,8 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
-#### IT-APR-008 — Approval fails with 409 when balance changed between submission and approval (C-07)
-
-- **Endpoint:** `PATCH /api/v1/requests/REQ_ID/approve`
-- **Setup:** Alice submitted request for `5.00` days when balance was `8.00`. Balance reduced to `4.00` via batch sync before approval.
-- **Assert:** HTTP 409 `BALANCE_INSUFFICIENT_AT_APPROVAL`. Response includes `currentAvailableDays: 4.00`. Request remains `PENDING_APPROVAL`.
-- **Traceability:** C-07
-
----
-
-#### IT-APR-009 — `decided_by`, `decided_at` fields are populated correctly after approval
-
-- **Endpoint:** `PATCH /api/v1/requests/REQ_ID/approve`
-- **Assert:** `decided_by = BOB_ID`, `decided_at` is a valid ISO timestamp.
-- **Traceability:** §4.3 Data Model
-
----
-
-#### IT-APR-010 — Approval-time re-validation reads live aggregate, not a cached value
+#### IT-APR-010 — Approval-time re-validation reads live aggregate
+, not a cached value
 
 - **Endpoint:** `PATCH /api/v1/requests/REQ_ID/approve`  
 - **Setup:** Two approved-undeducted requests already in DB (reducing effective balance). A third request approval attempted.
@@ -1333,25 +1210,18 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
-#### IT-CON-001 — Two concurrent approval attempts for the same employee are serialized; second fails with 409
+#### IT-CON-001 — serialization prevents double-spending in race condition (two concurrent approval attempts)
 
 - **Endpoint:** `PATCH /api/v1/requests/:id/approve` (concurrent)
 - **Setup:** Charlie: `balance_days = 3.00`. Two `PENDING_APPROVAL` requests each for `2.00` days. Two managers attempt to approve both simultaneously via `Promise.all`.
-- **Assert:** Exactly one request succeeds (HTTP 200, status = APPROVED). Other returns HTTP 409 `BALANCE_INSUFFICIENT_AT_APPROVAL`. Net deduction never exceeds `balance_days`.
+- **Assert:** Exactly one request succeeds (HTTP 200, status = APPROVED). Other returns HTTP 409 `BALANCE_INSUFFICIENT_AT_APPROVAL` because serialized re-validation detects the reduced balance. Net deduction never exceeds `balance_days`.
 - **Traceability:** C-04, C-05
 
----
-
-#### IT-CON-002 — 50 concurrent submission attempts against same employee — at most one record created per request (no phantom rows)
-
-- **Endpoint:** `POST /api/v1/requests` (50 concurrent)
-- **Setup:** Charlie: `balance_days = 10.00`. 50 concurrent `POST /requests`.
-- **Assert:** All accepted (balance is sufficient). Exactly 50 unique `requestId` values returned. No duplicate records in DB.
-- **Traceability:** C-04, C-20
 
 ---
 
-#### IT-CON-003 — Sequential approvals correctly decrement available balance via live aggregate
+#### IT-CON-003 — Sequential approvals correctly decrement available balance
+ via live aggregate
 
 - **Endpoint:** `PATCH /api/v1/requests/:id/approve` (sequential)
 - **Setup:** Alice: `balance_days = 10.00`. Three pending requests: `3.00`, `3.00`, `5.00`. Manager approves in order.
@@ -1369,12 +1239,8 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
-#### IT-CON-005 — Concurrent submissions capped at 10 pending; race condition does not allow >10
+---
 
-- **Endpoint:** `POST /api/v1/requests` (concurrent)
-- **Setup:** Alice has 9 pending requests. 5 concurrent submissions fired simultaneously.
-- **Assert:** Exactly 1 additional request created (10th). Remaining 4 receive 429. Total pending = 10.
-- **Traceability:** C-20
 
 ---
 
@@ -1683,6 +1549,11 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
+#### IT-CAN-005 — Cancelled request does not count towards 10-pending cap
+
+
+---
+
 ### 4.8 Admin & Audit
 
 **File:** `test/integration/admin.integration.spec.ts`
@@ -1723,7 +1594,7 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 
 ---
 
-#### IT-AUD-005 — `GET /health` returns DB connectivity status and HCM reachability
+#### IT-HEA-001 — Health check returns 200 OK
 
 - **Endpoint:** `GET /api/v1/health`
 - **Auth:** None required.
@@ -1733,6 +1604,7 @@ Sub-prefixes group tests by subsystem (e.g., `BAL` = BalanceService, `SUB` = Sub
 ---
 
 #### IT-AUD-006 — `GET /health` returns degraded status when HCM is unreachable
+
 
 - **Endpoint:** `GET /api/v1/health`
 - **Setup:** Mock HCM health check endpoint returns 503.

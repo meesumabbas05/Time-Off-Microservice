@@ -9,6 +9,7 @@ import { LeaveBalance } from './entities/leave-balance.entity';
 import { TimeOffRequest } from './entities/time-off-request.entity';
 import { BalanceAuditLog } from './entities/balance-audit-log.entity';
 import { OutboxEvent } from './entities/outbox-event.entity';
+import { RateLimit } from './entities/rate-limit.entity';
 import { BalanceModule } from './balance/balance.module';
 import { TimeOffRequestModule } from './time-off-request/time-off-request.module';
 import { HcmSyncModule } from './hcm-sync/hcm-sync.module';
@@ -16,6 +17,7 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { SecurityModule } from './security/security.module';
 import { AdminModule } from './admin/admin.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { HcmClientModule } from './hcm-client/hcm-client.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -25,7 +27,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     TypeOrmModule.forRoot({
       type: 'sqlite',
       database: process.env.DATABASE_PATH || 'data/toms.db',
-      entities: [Tenant, User, LeaveBalance, TimeOffRequest, BalanceAuditLog, OutboxEvent],
+      entities: [Tenant, User, LeaveBalance, TimeOffRequest, BalanceAuditLog, OutboxEvent, RateLimit],
       synchronize: process.env.NODE_ENV !== 'production', 
       logging: false,
       extra: {
@@ -42,6 +44,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     SecurityModule,
     AdminModule,
     OutboxModule,
+    HcmClientModule,
   ],
   controllers: [AppController],
   providers: [AppService],

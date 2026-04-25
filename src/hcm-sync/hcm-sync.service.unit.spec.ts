@@ -3,6 +3,7 @@ import { HcmSyncService, InvalidWebhookSignatureException } from './hcm-sync.ser
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { OutboxEvent, OutboxEventStatus, OutboxEventType } from '../entities/outbox-event.entity';
 import { Tenant } from '../entities/tenant.entity';
+import { BalanceAuditLog } from '../entities/balance-audit-log.entity';
 import * as crypto from 'crypto';
 
 describe('HcmSyncService', () => {
@@ -19,9 +20,17 @@ describe('HcmSyncService', () => {
     findOne: jest.fn(),
   };
 
+  const mockAuditRepo = {
+    save: jest.fn(),
+    create: jest.fn(),
+  };
+
   const mockHttpClient = {
     postRequest: jest.fn(),
     fetchBalances: jest.fn(),
+    getBalance: jest.fn(),
+    deduct: jest.fn(),
+    credit: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -30,6 +39,7 @@ describe('HcmSyncService', () => {
         HcmSyncService,
         { provide: getRepositoryToken(OutboxEvent), useValue: mockOutboxRepo },
         { provide: getRepositoryToken(Tenant), useValue: mockTenantRepo },
+        { provide: getRepositoryToken(BalanceAuditLog), useValue: mockAuditRepo },
         { provide: 'HCM_CLIENT', useValue: mockHttpClient },
       ],
     }).compile();
@@ -58,9 +68,11 @@ describe('HcmSyncService', () => {
           cb({
             findOne: jest.fn().mockResolvedValue(null),
             save: jest.fn().mockResolvedValue(true),
+            create: jest.fn().mockImplementation((entity, data) => data),
           }),
         ),
         find: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((entity, data) => data),
         save: jest.fn().mockResolvedValue(true),
       };
       const validSignature = crypto.createHmac('sha256', 'secret').update(JSON.stringify(payload)).digest('hex');
@@ -92,9 +104,11 @@ describe('HcmSyncService', () => {
           cb({
             findOne: jest.fn().mockResolvedValue(null),
             save: jest.fn().mockResolvedValue(true),
+            create: jest.fn().mockImplementation((entity, data) => data),
           }),
         ),
         find: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((entity, data) => data),
         save: jest.fn().mockResolvedValue(true),
       };
       const validSignature = crypto.createHmac('sha256', 'secret').update(JSON.stringify(payload)).digest('hex');
@@ -126,11 +140,13 @@ describe('HcmSyncService', () => {
           cb({
             findOne: jest.fn().mockResolvedValue(null),
             save: jest.fn().mockResolvedValue(true),
+            create: jest.fn().mockImplementation((entity, data) => data),
           }),
         ),
         find: jest.fn().mockResolvedValue([
           { id: 'u1', employee_id: 'e1' }
         ]),
+        create: jest.fn().mockImplementation((entity, data) => data),
         save: jest.fn().mockResolvedValue(true),
       };
 
@@ -170,7 +186,7 @@ describe('HcmSyncService', () => {
     });
 
     it('UT-SYN-007 — worker successfully marks outbox event to DONE when HCM returns 201', async () => {
-       mockHttpClient.postRequest.mockResolvedValue({ status: 201 });
+       mockHttpClient.deduct.mockResolvedValue({ status: 201 });
        mockOutboxRepo.save.mockImplementation(dto => dto);
        
        const event = { ...mockEvent };
@@ -180,7 +196,7 @@ describe('HcmSyncService', () => {
     });
 
     it('UT-SYN-008 — worker increments attempt_count and sets DEAD_LETTER if retries exhausted', async () => {
-       mockHttpClient.postRequest.mockRejectedValue(new Error('Fatal HCM Error'));
+       mockHttpClient.deduct.mockRejectedValue(new Error('Fatal HCM Error'));
        mockOutboxRepo.save.mockImplementation(dto => dto);
        
        const event = { ...mockEvent, attempt_count: 4 }; // Assuming max retries is 5
