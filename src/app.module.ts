@@ -9,6 +9,7 @@ import { LeaveBalance } from './entities/leave-balance.entity';
 import { TimeOffRequest } from './entities/time-off-request.entity';
 import { BalanceAuditLog } from './entities/balance-audit-log.entity';
 import { OutboxEvent } from './entities/outbox-event.entity';
+import { BalanceModule } from './balance/balance.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { OutboxEvent } from './entities/outbox-event.entity';
       synchronize: process.env.NODE_ENV !== 'production', // Use synchronize for development/test only
       // In production WAL mode should be explicitly set, e.g. via connection options or executing PRAGMA journal_mode=WAL
     }),
+    BalanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
