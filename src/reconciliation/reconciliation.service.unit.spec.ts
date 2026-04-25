@@ -19,6 +19,10 @@ describe('ReconciliationService', () => {
     save: jest.fn(),
   };
 
+  const mockAlertService = {
+    notifyLargeDrift: jest.fn(),
+  };
+
   let loggerWarnSpy: jest.SpyInstance;
 
   beforeEach(async () => {
@@ -27,6 +31,7 @@ describe('ReconciliationService', () => {
         ReconciliationService,
         { provide: getRepositoryToken(LeaveBalance), useValue: mockLeaveBalanceRepo },
         { provide: getRepositoryToken(BalanceAuditLog), useValue: mockAuditLogRepo },
+        { provide: 'ALERT_SERVICE', useValue: mockAlertService },
       ],
     }).compile();
 
@@ -91,6 +96,20 @@ describe('ReconciliationService', () => {
       expect(mockAuditLogRepo.save).not.toHaveBeenCalled();
     });
 
+    it('does not reconcile when drift is within 0.5 threshold', async () => {
+      mockLeaveBalanceRepo.findOne.mockResolvedValue({
+        tenant_id: 't1', employee_id: 'e1', location_id: 'l1', leave_type: 'VACATION', balance_days: 10.4
+      });
+
+      await service.reconcileBatch(batchPayload);
+
+      expect(mockAuditLogRepo.save).not.toHaveBeenCalled();
+      expect(mockLeaveBalanceRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        balance_days: 10.4,
+        hcm_last_synced: expect.any(Date),
+      }));
+    });
+
     it('UT-REC-005 — safely handles batch payloads missing records (logs warning, does not fail)', async () => {
       const emptyPayload = { tenant_id: 't1', hcm_as_of: new Date().toISOString(), records: [] };
       
@@ -115,6 +134,27 @@ describe('ReconciliationService', () => {
           delta: 10.00,
           source: AuditSource.RECONCILIATION
         }));
+    });
+
+    it('sends alert when discrepancy is greater than 5 days', async () => {
+      mockLeaveBalanceRepo.findOne.mockResolvedValue({
+        id: 'bal_alert',
+        tenant_id: 't1',
+        employee_id: 'e1',
+        location_id: 'l1',
+        leave_type: 'VACATION',
+        balance_days: 2.0,
+      });
+      mockLeaveBalanceRepo.save.mockImplementation((dto) => dto);
+      mockAuditLogRepo.create.mockImplementation((dto) => dto);
+
+      await service.reconcileBatch(batchPayload);
+
+      expect(mockAlertService.notifyLargeDrift).toHaveBeenCalledWith(expect.objectContaining({
+        tenant_id: 't1',
+        employee_id: 'e1',
+        difference: 8,
+      }));
     });
   });
 });

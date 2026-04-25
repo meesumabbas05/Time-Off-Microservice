@@ -14,22 +14,34 @@ import { TimeOffRequestModule } from './time-off-request/time-off-request.module
 import { HcmSyncModule } from './hcm-sync/hcm-sync.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { SecurityModule } from './security/security.module';
+import { AdminModule } from './admin/admin.module';
+import { OutboxModule } from './outbox/outbox.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       type: 'sqlite',
       database: process.env.DATABASE_PATH || 'data/toms.db',
       entities: [Tenant, User, LeaveBalance, TimeOffRequest, BalanceAuditLog, OutboxEvent],
-      synchronize: process.env.NODE_ENV !== 'production', // Use synchronize for development/test only
-      // In production WAL mode should be explicitly set, e.g. via connection options or executing PRAGMA journal_mode=WAL
+      synchronize: process.env.NODE_ENV !== 'production', 
+      logging: false,
+      extra: {
+        // Enforce WAL mode for better concurrency handling in integration tests
+        journal_mode: 'WAL',
+        synchronous: 'NORMAL',
+        busy_timeout: 5000,
+      }
     }),
     BalanceModule,
     TimeOffRequestModule,
     HcmSyncModule,
     ReconciliationModule,
     SecurityModule,
+    AdminModule,
+    OutboxModule,
   ],
   controllers: [AppController],
   providers: [AppService],

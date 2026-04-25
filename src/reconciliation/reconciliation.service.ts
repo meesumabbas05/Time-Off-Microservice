@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LeaveBalance } from '../entities/leave-balance.entity';
@@ -7,12 +7,15 @@ import { BalanceAuditLog, AuditSource } from '../entities/balance-audit-log.enti
 @Injectable()
 export class ReconciliationService {
   private readonly logger = new Logger(ReconciliationService.name);
+  private readonly reconcileThreshold = 0.5;
+  private readonly alertThreshold = 5.0;
 
   constructor(
     @InjectRepository(LeaveBalance)
     private leaveBalanceRepo: Repository<LeaveBalance>,
     @InjectRepository(BalanceAuditLog)
     private auditLogRepo: Repository<BalanceAuditLog>,
+    @Optional() @Inject('ALERT_SERVICE') private alertService?: { notifyLargeDrift: (payload: any) => Promise<void> | void },
   ) {}
 
   async reconcileBatch(batchPayload: any): Promise<void> {
@@ -40,7 +43,7 @@ export class ReconciliationService {
       // Discrepancy logic: floating point precision differences safe-check
       const difference = Math.abs(tomsBalanceDays - hcmBalanceDays);
 
-      if (difference > 0.001) {
+      if (difference > this.reconcileThreshold) {
         const delta = Number((hcmBalanceDays - tomsBalanceDays).toFixed(2));
         
         if (!balance) {
@@ -71,6 +74,19 @@ export class ReconciliationService {
         });
 
         await this.auditLogRepo.save(auditEvent);
+
+        if (difference > this.alertThreshold && this.alertService?.notifyLargeDrift) {
+          await this.alertService.notifyLargeDrift({
+            tenant_id: tenantId,
+            employee_id: record.employee_id,
+            location_id: record.location_id,
+            leave_type: record.leave_type,
+            difference,
+            previous_days: tomsBalanceDays,
+            new_days: hcmBalanceDays,
+            hcm_as_of: hcmAsOf,
+          });
+        }
       } else if (balance) {
         // Just update the freshness timestamp without creating an audit log
         balance.hcm_last_synced = hcmAsOf;

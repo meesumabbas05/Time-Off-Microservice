@@ -1,5 +1,5 @@
 import { ValidationPipe, ArgumentMetadata, BadRequestException } from '@nestjs/common';
-import { CreateTimeOffRequestDto, ApproveRequestDto } from './time-off-request.dto';
+import { CreateTimeOffRequestDto, ApproveRequestDto, BatchSyncDto } from './time-off-request.dto';
 
 describe('TimeOffRequest DTOs', () => {
 
@@ -64,6 +64,19 @@ describe('TimeOffRequest DTOs', () => {
 
       await expect(validationPipeForbid.transform(input, getMetadata(CreateTimeOffRequestDto))).rejects.toThrow();
     });
+
+    it('UT-DTO-006 — CreateTimeOffRequestDto rejects negative days_requested', async () => {
+      const input = {
+        locationId: 'l1',
+        leaveType: 'VACATION',
+        startDate: '2026-03-01',
+        endDate: '2026-03-05',
+        timezone: 'UTC',
+        days_requested: -1,
+      };
+
+      await expect(validationPipeForbid.transform(input, getMetadata(CreateTimeOffRequestDto))).rejects.toThrow();
+    });
   });
 
   describe('ApproveRequestDto', () => {
@@ -83,6 +96,30 @@ describe('TimeOffRequest DTOs', () => {
       const input = {};
 
       await expect(validationPipeForbid.transform(input, getMetadata(ApproveRequestDto))).rejects.toThrow();
+    });
+  });
+
+  describe('BatchSyncDto', () => {
+    let validationPipeForbid: ValidationPipe;
+
+    beforeEach(() => {
+      validationPipeForbid = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    });
+
+    const getMetadata = (metatype: any): ArgumentMetadata => ({
+      type: 'body',
+      metatype,
+      data: '',
+    });
+
+    it('UT-DTO-005 — BatchSyncDto validates that records array is non-empty', async () => {
+      const input = {
+        tenantId: 't1',
+        nonce: 'n1',
+        records: [],
+      };
+
+      await expect(validationPipeForbid.transform(input, getMetadata(BatchSyncDto))).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { OutboxEvent, OutboxEventStatus, OutboxEventType } from '../entities/outbox-event.entity';
 import { Tenant } from '../entities/tenant.entity';
+import { LeaveBalance } from '../entities/leave-balance.entity';
+import { User } from '../entities/user.entity';
 
 export class InvalidWebhookSignatureException extends HttpException {
   constructor() { super('Invalid webhook signature', HttpStatus.UNAUTHORIZED); }
@@ -16,29 +18,109 @@ export class CircuitBreakerOpenException extends Error {
 @Injectable()
 export class HcmSyncService {
   private circuitBreakerState = { errorCount: 0, open: false, openTime: 0 };
+  private readonly processedNonces = new Map<string, number>();
+  private readonly nonceTtlMs = 24 * 60 * 60 * 1000;
   
   constructor(
     @InjectRepository(OutboxEvent)
     private outboxRepo: Repository<OutboxEvent>,
     @InjectRepository(Tenant)
     private tenantRepo: Repository<Tenant>,
-    @Inject('HTTP_CLIENT')
+    @Inject('HCM_CLIENT')
     private httpClient: any,
   ) {}
 
-  async handleWebhook(tenantId: string, payload: any, signature: string): Promise<{ status: number }> {
+  async handleWebhook(tenantId: string, payload: any, signature: string): Promise<{ synced: number; skipped: number }> {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new HttpException('Tenant not found', HttpStatus.NOT_FOUND);
 
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    // 1. HMAC Verification
+    const payloadString = JSON.stringify(payload);
     const expectedSignature = crypto.createHmac('sha256', tenant.webhook_secret).update(payloadString).digest('hex');
 
     if (signature !== expectedSignature) {
       throw new InvalidWebhookSignatureException();
     }
 
-    // In a real implementation, we'd queue processing. The strict TRD just says 202 ACCEPTED synchronously.
-    return { status: 202 };
+    // 2. Nonce/Replay Protection
+    if (!payload.nonce) throw new HttpException('Missing nonce', HttpStatus.BAD_REQUEST);
+    this.assertFreshNonce(tenantId, payload.nonce);
+
+    // 3. Process Batch Atomically
+    return await this.tenantRepo.manager.transaction(async (trxManager) => {
+      let synced = 0;
+      let skipped = 0;
+
+      for (const record of payload.records) {
+        const { employeeId, locationId, leaveType, days, asOf } = record;
+        
+        if (!employeeId || !locationId || !leaveType || days === undefined || !asOf) {
+            throw new HttpException('Invalid record in batch', HttpStatus.BAD_REQUEST);
+        }
+
+        const existing = await trxManager.findOne(LeaveBalance, {
+          where: { tenant_id: tenantId, employee_id: employeeId, location_id: locationId, leave_type: leaveType }
+        });
+
+        const asOfDate = new Date(asOf);
+        if (existing && existing.hcm_last_synced && existing.hcm_last_synced >= asOfDate) {
+          skipped++;
+          continue;
+        }
+
+        // Upsert
+        const balance = existing || new LeaveBalance();
+        balance.tenant_id = tenantId;
+        balance.employee_id = employeeId;
+        balance.location_id = locationId;
+        balance.leave_type = leaveType;
+        balance.balance_days = days;
+        balance.hcm_last_synced = asOfDate;
+
+        await trxManager.save(LeaveBalance, balance);
+        synced++;
+      }
+
+      return { synced, skipped };
+    });
+  }
+
+  async triggerManualSync(tenantId: string): Promise<{ synced: number; skipped: number }> {
+    const records = await this.httpClient.fetchBalances(tenantId);
+    return await this.tenantRepo.manager.transaction(async (trxManager) => {
+      let synced = 0;
+      let skipped = 0;
+
+      for (const record of records || []) {
+        const { employeeId, locationId, leaveType, days, asOf } = record;
+        if (!employeeId || !locationId || !leaveType || days === undefined || !asOf) {
+          continue;
+        }
+
+        const existing = await trxManager.findOne(LeaveBalance, {
+          where: { tenant_id: tenantId, employee_id: employeeId, location_id: locationId, leave_type: leaveType }
+        });
+
+        const asOfDate = new Date(asOf);
+        if (existing && existing.hcm_last_synced && existing.hcm_last_synced >= asOfDate) {
+          skipped++;
+          continue;
+        }
+
+        const balance = existing || new LeaveBalance();
+        balance.tenant_id = tenantId;
+        balance.employee_id = employeeId;
+        balance.location_id = locationId;
+        balance.leave_type = leaveType;
+        balance.balance_days = days;
+        balance.hcm_last_synced = asOfDate;
+
+        await trxManager.save(LeaveBalance, balance);
+        synced++;
+      }
+
+      return { synced, skipped };
+    });
   }
 
   async queueHcmDeduct(tenantId: string, requestId: string, idempotencyKey: string): Promise<OutboxEvent> {
@@ -112,5 +194,40 @@ export class HcmSyncService {
     }
 
     await this.outboxRepo.save(event);
+  }
+
+  private assertFreshNonce(tenantId: string, nonce: string): void {
+    const now = Date.now();
+    const key = `${tenantId}:${nonce}`;
+
+    for (const [storedKey, ts] of this.processedNonces.entries()) {
+      if (now - ts > this.nonceTtlMs) {
+        this.processedNonces.delete(storedKey);
+      }
+    }
+
+    if (this.processedNonces.has(key)) {
+      throw new HttpException('Nonce replay detected', HttpStatus.CONFLICT);
+    }
+
+    this.processedNonces.set(key, now);
+  }
+
+  async triggerReconciliation(tenantId: string): Promise<{ drifts: number }> {
+    // Implementation using the efficient fetchBalances approach
+    const records = await this.httpClient.fetchBalances(tenantId);
+    let drifts = 0;
+    for (const record of records || []) {
+      const { employee_id, location_id, leave_type, days } = record;
+      const existing = await this.tenantRepo.manager.findOne(LeaveBalance, {
+        where: { tenant_id: tenantId, employee_id, location_id, leave_type }
+      });
+      if (existing && Math.abs(existing.balance_days - days) > 0.01) {
+        existing.balance_days = days;
+        await this.tenantRepo.manager.save(LeaveBalance, existing);
+        drifts++;
+      }
+    }
+    return { drifts };
   }
 }
