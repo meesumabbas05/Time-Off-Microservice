@@ -6,7 +6,8 @@ import { OutboxEvent, OutboxEventStatus } from '../entities/outbox-event.entity'
 import { TimeOffRequest } from '../entities/time-off-request.entity';
 import { LeaveBalance } from '../entities/leave-balance.entity';
 import { BalanceAuditLog, AuditSource } from '../entities/balance-audit-log.entity';
-import { OutboxWorker, HcmClientLike, AlertLike, OutboxEventLike } from './outbox.worker';
+import { OutboxWorker, OutboxEventLike } from './outbox.worker';
+import type { HcmClientLike, AlertLike } from './outbox.worker';
 
 @Injectable()
 export class OutboxService {

@@ -34,10 +34,21 @@ npm install
 Create a `.env` file in the root directory:
 ```env
 PORT=3000
-DATABASE_PATH=data/toms.sqlite
 JWT_SECRET=your-secure-secret
 MOCK_HCM_PORT=4000
 HCM_BASE_URL=http://localhost:4000
+
+# Database Configuration (SQLite)
+DB_TYPE=sqlite
+DATABASE_PATH=data/toms.db
+
+# Database Configuration (Postgres - optional)
+# DB_TYPE=postgres
+# DB_HOST=localhost
+# DB_PORT=5432
+# DB_USERNAME=postgres
+# DB_PASSWORD=postgres
+# DB_NAME=toms
 ```
 
 ### 3. Initialize Database

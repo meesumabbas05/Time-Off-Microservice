@@ -11,8 +11,12 @@ async function runSeed() {
   const keepData = args.includes('--keep');
 
   const AppDataSource = new DataSource({
-    type: 'sqlite',
-    database: process.env.DATABASE_PATH || 'data/e2e-test.db', // Using a specific testing DB.
+    type: (process.env.DB_TYPE as any) || 'sqlite',
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : undefined,
+    username: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_TYPE === 'postgres' ? process.env.DB_NAME : (process.env.DATABASE_PATH || 'data/toms.db'),
     entities: [Tenant, User, LeaveBalance, TimeOffRequest, BalanceAuditLog, OutboxEvent],
     synchronize: true, // Auto-create tables
   });
@@ -52,8 +56,8 @@ async function runSeed() {
 
   console.log('Database seeded successfully with test fixtures!');
 
-  if (!keepData) {
-    console.log('Cleaning up data as --keep was not provided...');
+  if (args.includes('--cleanup')) {
+    console.log('Cleaning up data as --cleanup was provided...');
     await AppDataSource.query('PRAGMA foreign_keys = OFF;');
     for (const entity of entities) {
         const repository = AppDataSource.getRepository(entity.name);

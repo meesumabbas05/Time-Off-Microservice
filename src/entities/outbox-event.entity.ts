@@ -44,6 +44,9 @@ export class OutboxEvent {
   @Column('datetime', { nullable: true })
   last_attempted: Date;
 
+  @Column({ nullable: true })
+  hcm_request_id: string;
+
   @CreateDateColumn()
   created_at: Date;
 }

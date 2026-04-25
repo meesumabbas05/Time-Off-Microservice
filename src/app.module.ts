@@ -25,13 +25,17 @@ import { ScheduleModule } from '@nestjs/schedule';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
-      type: 'sqlite',
-      database: process.env.DATABASE_PATH || 'data/toms.db',
+      type: (process.env.DB_TYPE as any) || 'sqlite',
+      host: process.env.DB_HOST,
+      port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : undefined,
+      username: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_TYPE === 'postgres' ? process.env.DB_NAME : (process.env.DATABASE_PATH || 'data/toms.db'),
       entities: [Tenant, User, LeaveBalance, TimeOffRequest, BalanceAuditLog, OutboxEvent, RateLimit],
       synchronize: process.env.NODE_ENV !== 'production', 
       logging: false,
-      extra: {
-        // Enforce WAL mode for better concurrency handling in integration tests
+      extra: process.env.DB_TYPE === 'postgres' ? {} : {
+        // Enforce WAL mode for better concurrency handling in local dev/tests
         journal_mode: 'WAL',
         synchronous: 'NORMAL',
         busy_timeout: 5000,

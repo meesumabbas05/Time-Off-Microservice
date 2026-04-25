@@ -129,8 +129,8 @@ export class HcmClientService {
         },
       });
       return { 
-        days: Number(response.data.days), 
-        asOf: new Date(response.data.asOf) 
+        days: Number((response as any).data.days), 
+        asOf: new Date((response as any).data.asOf) 
       };
     } catch (error: any) {
       if (error.code === 'EOPENBREAKER') throw new Error('CircuitBreakerOpenError');
@@ -152,7 +152,7 @@ export class HcmClientService {
           Authorization: config.hcm_api_key,
         },
       });
-      return response.data;
+      return (response as any).data;
     } catch (error: any) {
       if (error.code === 'EOPENBREAKER') throw new Error('CircuitBreakerOpenError');
       throw error;

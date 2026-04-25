@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { Repository, EntityManager, IsNull } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { TimeOffRequest, RequestStatus } from '../entities/time-off-request.entity';
 import { User } from '../entities/user.entity';
@@ -295,7 +295,7 @@ export class TimeOffRequestService {
         location_id: request.location_id,
         leave_type: request.leave_type,
         status: RequestStatus.APPROVED,
-        hcm_request_id: null,
+        hcm_request_id: IsNull(),
       },
       select: ['id', 'days_requested'],
     });
