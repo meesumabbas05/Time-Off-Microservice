@@ -64,6 +64,11 @@ describe('TimeOffRequestService', () => {
     jest.clearAllMocks();
     mockBalanceService.getLastSynced.mockResolvedValue(new Date());
     mockRequestRepo.find.mockResolvedValue([]);
+    
+    // Default user mocks to prevent "User not found" errors
+    mockUserRepo.findOne.mockResolvedValue({ 
+      id: 'ALICE_ID', employee_id: 'ALICE_ID', timezone: 'UTC' 
+    });
   });
 
   describe('submitRequest', () => {
@@ -219,6 +224,10 @@ describe('TimeOffRequestService', () => {
       employee_id: 'ALICE_ID', days_requested: 3.00, idempotency_key: 'idk_1' 
     };
 
+    beforeEach(() => {
+      mockUserRepo.findOne.mockResolvedValue({ id: mockManagerId, employee_id: mockManagerId });
+    });
+
     it('UT-REQ-008 — sets status to APPROVED and creates outbox HCM_DEDUCT event in same transaction', async () => {
       mockRequestRepo.findOne.mockResolvedValue({ ...mockRequest });
       mockBalanceService.getLastSynced.mockResolvedValue(new Date());
@@ -337,6 +346,10 @@ describe('TimeOffRequestService', () => {
   });
 
   describe('cancelRequest', () => {
+    beforeEach(() => {
+        mockUserRepo.findOne.mockResolvedValue({ id: 'EMP_1', employee_id: 'EMP_1' });
+    });
+
     it('UT-REQ-014 — sets status to CANCELLED for PENDING_APPROVAL request', async () => {
       const mockRequest = { id: 'req_1', status: RequestStatus.PENDING_APPROVAL, employee_id: 'EMP_1' };
       mockRequestRepo.findOne.mockResolvedValue(mockRequest);
@@ -356,6 +369,8 @@ describe('TimeOffRequestService', () => {
     it('UT-REQ-016 — throws FORBIDDEN when employee does not own the request', async () => {
       const mockRequest = { id: 'req_1', status: RequestStatus.PENDING_APPROVAL, employee_id: 'EMP_1' };
       mockRequestRepo.findOne.mockResolvedValue(mockRequest);
+      // Override for this specific test
+      mockUserRepo.findOne.mockResolvedValue({ id: 'HACKER', employee_id: 'HACKER' });
 
       await expect(service.cancelRequest('req_1', 'HACKER')).rejects.toThrow(ForbiddenException);
     });
@@ -371,6 +386,7 @@ describe('TimeOffRequestService', () => {
       };
       mockRequestRepo.findOne.mockResolvedValue(approvedRequest);
       mockOutboxRepo.create.mockImplementation((dto) => dto);
+      mockUserRepo.findOne.mockResolvedValue({ id: 'ADMIN_1', employee_id: 'ADMIN_1' });
 
       const mockTrxManager = {
         save: jest.fn().mockImplementation((entity) => entity),

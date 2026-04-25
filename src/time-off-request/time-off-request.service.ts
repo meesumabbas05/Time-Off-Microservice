@@ -66,6 +66,10 @@ export class TimeOffRequestService {
     return await this.userRepo.findOne({ where: { employee_id: employeeId } });
   }
 
+  async findUserById(id: string): Promise<User | null> {
+    return await this.userRepo.findOne({ where: { id } });
+  }
+
   private calculateDays(startDate: string, endDate: string, timezone: string): number {
     const startUtc = fromZonedTime(`${startDate}T00:00:00`, timezone);
     const endUtc = fromZonedTime(`${endDate}T00:00:00`, timezone);
@@ -80,26 +84,29 @@ export class TimeOffRequestService {
   }
 
   async submitRequest(dto: any, user: any): Promise<TimeOffRequest> {
+    const requestingUser = await this.userRepo.findOne({ where: { id: user.userId } });
+    if (!requestingUser) throw new ForbiddenException('User not found');
+
     const pendingCount = await this.requestRepo.count({
-      where: { tenant_id: user.tenantId, employee_id: user.userId, status: RequestStatus.PENDING_APPROVAL }
+      where: { tenant_id: user.tenantId, employee_id: requestingUser.employee_id, status: RequestStatus.PENDING_APPROVAL }
     });
     
     if (pendingCount >= 10) {
       throw new PendingRequestLimitException(pendingCount);
     }
 
-    this.validateDimensionCombination(user.userId, dto.locationId, dto.leaveType);
+    this.validateDimensionCombination(requestingUser.employee_id, dto.locationId, dto.leaveType);
 
-    const lastSynced = await this.getLastSynced(user.tenantId, user.userId, dto.locationId, dto.leaveType);
+    const lastSynced = await this.getLastSynced(user.tenantId, requestingUser.employee_id, dto.locationId, dto.leaveType);
     if (!this.balanceService.isFresh({ hcm_last_synced: lastSynced } as any)) {
-      await this.balanceService.refreshFromHcm(user.tenantId, user.userId, dto.locationId, dto.leaveType);
+      await this.balanceService.refreshFromHcm(user.tenantId, requestingUser.employee_id, dto.locationId, dto.leaveType);
     }
 
-    const balance = await this.balanceService.getBalance(user.tenantId, user.userId, dto.locationId, dto.leaveType);
+    const balance = await this.balanceService.getBalance(user.tenantId, requestingUser.employee_id, dto.locationId, dto.leaveType);
     const available = balance.available_days;
 
     // Days calculate override if fractional was sent
-    const requested = dto.days_requested && dto.days_requested > 0 ? dto.days_requested : this.calculateDays(dto.startDate, dto.endDate, user.timezone || dto.timezone || 'UTC');
+    const requested = dto.days_requested && dto.days_requested > 0 ? dto.days_requested : this.calculateDays(dto.startDate, dto.endDate, requestingUser.timezone || dto.timezone || 'UTC');
 
     if (available < requested) {
       throw new InsufficientBalanceException();
@@ -107,7 +114,7 @@ export class TimeOffRequestService {
 
     const request = this.requestRepo.create({
       tenant_id: user.tenantId,
-      employee_id: user.userId,
+      employee_id: requestingUser.employee_id,
       location_id: dto.locationId,
       leave_type: dto.leaveType,
       start_date: dto.startDate,
@@ -139,7 +146,10 @@ export class TimeOffRequestService {
     const request = await this.requestRepo.findOne({ where: { id: requestId } });
     if (!request) throw new HttpException('Not found', HttpStatus.NOT_FOUND);
 
-    if (request.employee_id === managerId) {
+    const managerRecord = await this.userRepo.findOne({ where: { id: managerId } });
+    if (!managerRecord) throw new HttpException('Manager not found', HttpStatus.NOT_FOUND);
+
+    if (request.employee_id === managerRecord.employee_id) {
       throw new SelfApprovalForbiddenException();
     }
 
@@ -174,7 +184,13 @@ export class TimeOffRequestService {
         const outboxEvent = this.outboxRepo.create({
           tenant_id: request.tenant_id,
           event_type: OutboxEventType.HCM_DEDUCT,
-          payload: { requestId: request.id },
+          payload: { 
+            requestId: request.id,
+            employeeId: request.employee_id,
+            locationId: request.location_id,
+            leaveType: request.leave_type,
+            daysRequested: Number(request.days_requested),
+          },
           idempotency_key: request.idempotency_key,
         });
 
@@ -200,8 +216,11 @@ export class TimeOffRequestService {
     const request = await this.requestRepo.findOne({ where: { id: requestId } });
     if (!request) throw new HttpException('Not found', HttpStatus.NOT_FOUND);
 
+    const requestingUser = await this.userRepo.findOne({ where: { id: employeeId } });
+    if (!requestingUser) throw new ForbiddenException('User not found');
+
     const isAdmin = actorRole === 'ADMIN';
-    if (request.employee_id !== employeeId && !isAdmin) {
+    if (request.employee_id !== requestingUser.employee_id && !isAdmin) {
       throw new ForbiddenException();
     }
 
@@ -221,8 +240,11 @@ export class TimeOffRequestService {
           event_type: OutboxEventType.HCM_CREDIT,
           payload: {
             requestId: request.id,
-            hcmRequestId: request.hcm_request_id || null,
+            employeeId: request.employee_id,
+            locationId: request.location_id,
+            leaveType: request.leave_type,
             daysRequested: Number(request.days_requested),
+            hcmRequestId: request.hcm_request_id || null,
           },
           idempotency_key: uuidv4(),
         });

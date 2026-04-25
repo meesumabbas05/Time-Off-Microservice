@@ -17,8 +17,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:all": "jest && jest --config jest-integration.json --maxWorkers=1",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --forceExit",
+    "test:int": "jest --config jest-integration.json --maxWorkers=1",
+    "test:all": "npm run test && npm run test:int && npm run test:e2e",
     "seed": "ts-node scripts/seed-db.ts"
   },
   "dependencies": {

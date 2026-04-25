@@ -1,98 +1,126 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Time-Off Microservice (TOMS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A resilient, multi-tenant microservice for managing employee time-off requests. TOMS acts as a manager-gated write-through cache for a central Human Capital Management (HCM) system, ensuring high availability even during HCM outages.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🚀 Key Features
 
-## Description
+- **Resilient Approval Flow**: Uses the **Outbox Pattern** to ensure that once a manager approves a request, it is eventually synchronized with the HCM system, even if the HCM is temporarily down.
+- **Multi-Tenant Architecture**: Full data isolation between tenants, with per-tenant HCM configurations and webhook secrets.
+- **High Performance**: Decisions are made against a local SQLite cache of balances, eliminating the latency of real-time HCM lookups.
+- **HCM Synchronization**: Supports batch sync webhooks for bulk updates and spot-refreshes for stale data (Configurable TTL).
+- **Self-Healing**: Automated reconciliation job detects and corrects any drift between the local cache and HCM truth.
+- **Security First**: Role-based access control (RBAC), ownership enforcement, and HMAC signature verification for all incoming webhooks.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## 🛠 Prerequisites
 
+- **Node.js**: v20 or higher
+- **npm**: v10 or higher
+- **SQLite3**: Required for local data persistence
+
+---
+
+## ⚙️ Local Setup
+
+### 1. Installation
 ```bash
-$ npm install
+git clone <repository-url>
+cd toms
+npm install
 ```
 
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+### 2. Configuration
+Create a `.env` file in the root directory:
+```env
+PORT=3000
+DATABASE_PATH=data/toms.sqlite
+JWT_SECRET=your-secure-secret
+MOCK_HCM_PORT=4000
+HCM_BASE_URL=http://localhost:4000
 ```
 
-## Run tests
-
+### 3. Initialize Database
+TOMS uses TypeORM with automatic synchronization in development. You can seed initial test data (Tenants, Users, Balances) using the provided script:
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run seed
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## 🏃 Running the System
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+To run the full system locally, you need to start both the **Mock HCM** and the **TOMS Server**.
 
+### 1. Start Mock HCM (Simulated External System)
+The Mock HCM simulates the external source of truth for balances and time-off records.
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+node test/mock-hcm/mock-hcm.js
+# Listening at http://localhost:4000
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 2. Start TOMS Server
+```bash
+# Development mode (watch)
+npm run start:dev
 
-## Resources
+# Production mode
+npm run build
+npm run start:prod
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+---
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## 🧪 Testing
 
-## Support
+TOMS features a comprehensive test suite (Unit, Integration, and E2E) with 100% coverage of critical security and concurrency challenges.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+# Run all tests sequentially (Unit -> Integration -> E2E)
+npm run test:all
 
-## Stay in touch
+# Run individual layers
+npm run test      # Unit tests
+npm run test:int  # Integration tests
+npm run test:e2e  # End-to-End tests
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+---
 
-## License
+## 📖 API Quick Reference
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Time-Off Requests
+- `POST /requests`: Submit a new request (Employee).
+- `PATCH /requests/:id/approve`: Approve a request (Manager/Admin).
+- `PATCH /requests/:id/reject`: Reject a request (Manager/Admin).
+- `PATCH /requests/:id/cancel`: Cancel a pending or approved request (Owner/Admin).
+- `GET /requests`: List requests with filters (Employee/Manager/Admin).
+
+### Balance Management
+- `GET /balance/:employeeId`: Get current balance for an employee.
+- `POST /sync/webhook/:tenantId`: Inbound batch sync from HCM (Requires HMAC Signature).
+- `POST /sync/trigger/:tenantId`: Manually trigger a spot-refresh for the current tenant.
+
+---
+
+## 🏗 Architecture Details
+
+### The Outbox Pattern
+When a request is approved, TOMS:
+1. Updates the local request status to `APPROVED`.
+2. Persists an `OutboxEvent` in the same database transaction.
+3. A background worker picks up the event and attempts to sync with the HCM.
+4. If the HCM is down, the worker retries with exponential backoff and circuit breaking.
+
+### Circuit Breakers
+All outgoing calls to the HCM are protected by **Opossum circuit breakers**. If the HCM returns consecutive errors, the breaker opens to prevent cascading failures and allow the HCM to recover.
+
+### Security
+- **JWT Authentication**: All endpoints are protected via `JwtAuthGuard`.
+- **Ownership Enforcement**: `OwnershipGuard` ensures employees can only view/cancel their own requests.
+- **Tenant Isolation**: `TenantScopeInterceptor` ensures all DB queries are filtered by the requesting user's `tenant_id`.
+
+---
+
+## 📄 License
+MIT

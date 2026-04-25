@@ -245,7 +245,7 @@ export class HcmSyncService {
     }
 
     if (this.processedNonces.has(key)) {
-      throw new HttpException('Nonce replay detected', HttpStatus.CONFLICT);
+      throw new HttpException('Nonce replay detected', HttpStatus.UNAUTHORIZED);
     }
 
     this.processedNonces.set(key, now);

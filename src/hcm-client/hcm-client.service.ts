@@ -69,7 +69,7 @@ export class HcmClientService {
     return url;
   }
 
-  async deduct(tenantId: string, payload: { requestId: string }, idempotencyKey: string): Promise<any> {
+  async deduct(tenantId: string, payload: { requestId: string, employeeId: string, locationId: string, leaveType: string, daysRequested: number }, idempotencyKey: string): Promise<any> {
     const config = await this.getConfig(tenantId);
     if (!config) throw new Error(`Config for tenant ${tenantId} not found`);
 
@@ -91,7 +91,7 @@ export class HcmClientService {
     }
   }
 
-  async credit(tenantId: string, payload: { hcmRequestId: string, daysRequested: number }, idempotencyKey: string): Promise<any> {
+  async credit(tenantId: string, payload: { requestId: string, employeeId: string, locationId: string, leaveType: string, daysRequested: number, hcmRequestId: string | null }, idempotencyKey: string): Promise<any> {
     const config = await this.getConfig(tenantId);
     if (!config) throw new Error(`Config for tenant ${tenantId} not found`);
 
@@ -165,5 +165,11 @@ export class HcmClientService {
     if (breaker.opened) return 'OPEN';
     if (breaker.halfOpen) return 'HALF_OPEN';
     return 'CLOSED';
+  }
+
+  resetBreakers(): void {
+    for (const breaker of this.breakers.values()) {
+      breaker.close();
+    }
   }
 }

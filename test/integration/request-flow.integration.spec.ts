@@ -300,7 +300,7 @@ describe('Request Flow (Integration)', () => {
 
     const event = await dataSource.getRepository(OutboxEvent).findOneBy({ tenant_id: 't1' });
     expect(event).toBeDefined();
-    expect(event?.payload).toEqual({ requestId: req.id });
+    expect(event?.payload).toMatchObject({ requestId: req.id });
   });
 
   it('IT-AUDIT-001 — verifies audit log on balance refresh (internal logic test via controller)', async () => {

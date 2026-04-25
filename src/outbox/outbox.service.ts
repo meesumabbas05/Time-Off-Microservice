@@ -28,7 +28,7 @@ export class OutboxService {
     this.worker = new OutboxWorker(hcmClient, alertService);
   }
 
-  @Cron(CronExpression.EVERY_5_SECONDS)
+  @Cron(process.env.NODE_ENV === 'test' ? '0 0 1 1 *' : CronExpression.EVERY_5_SECONDS)
   async handleCron() {
     const events = await this.outboxRepo.find({
       where: { status: OutboxEventStatus.PENDING },
@@ -37,6 +37,12 @@ export class OutboxService {
     });
 
     if (events.length === 0) return;
+
+    // Mark as PROCESSING immediately to prevent other workers from picking them up
+    for (const event of events) {
+      event.status = OutboxEventStatus.PROCESSING;
+    }
+    await this.outboxRepo.save(events);
 
     this.logger.log(`Processing ${events.length} outbox events...`);
 
@@ -70,71 +76,82 @@ export class OutboxService {
             const request = await this.requestRepo.findOne({ where: { id: requestId } });
             
             if (request) {
+                const alreadyProcessed = !!request.hcm_request_id;
                 if (event.hcm_request_id) {
                     request.hcm_request_id = event.hcm_request_id;
                 }
 
                 if (event.event_type === 'HCM_DEDUCT') {
-                    const balance = await this.balanceRepo.findOne({
-                        where: { 
-                            tenant_id: request.tenant_id, 
-                            employee_id: request.employee_id,
-                            location_id: request.location_id,
-                            leave_type: request.leave_type
+                    if (!alreadyProcessed) {
+                        const balance = await this.balanceRepo.findOne({
+                            where: { 
+                                tenant_id: request.tenant_id, 
+                                employee_id: request.employee_id,
+                                location_id: request.location_id,
+                                leave_type: request.leave_type
+                            }
+                        });
+                        if (balance) {
+                            const previousDays = Number(balance.balance_days);
+                            const requestedDays = Number(request.days_requested);
+                            const newDays = previousDays - requestedDays;
+
+                            balance.balance_days = newDays;
+                            await this.balanceRepo.save(balance);
+
+                            await this.auditLogRepo.save(this.auditLogRepo.create({
+                                tenant_id: request.tenant_id,
+                                employee_id: request.employee_id,
+                                location_id: request.location_id,
+                                leave_type: request.leave_type,
+                                previous_days: previousDays,
+                                new_days: newDays,
+                                delta: -requestedDays,
+                                source: AuditSource.APPROVAL,
+                                reference_id: request.id,
+                                actor: 'SYSTEM',
+                            }));
                         }
-                    });
-                    if (balance) {
-                        const previousDays = Number(balance.balance_days);
-                        const requestedDays = Number(request.days_requested);
-                        const newDays = previousDays - requestedDays;
-
-                        balance.balance_days = newDays;
-                        await this.balanceRepo.save(balance);
-
-                        await this.auditLogRepo.save(this.auditLogRepo.create({
-                            tenant_id: request.tenant_id,
-                            employee_id: request.employee_id,
-                            location_id: request.location_id,
-                            leave_type: request.leave_type,
-                            previous_days: previousDays,
-                            new_days: newDays,
-                            delta: -requestedDays,
-                            source: AuditSource.APPROVAL,
-                            reference_id: request.id,
-                            actor: 'SYSTEM',
-                        }));
                     }
-                }
-
-                if (event.event_type === 'HCM_CREDIT') {
-                    const balance = await this.balanceRepo.findOne({
-                        where: { 
-                            tenant_id: request.tenant_id, 
-                            employee_id: request.employee_id,
-                            location_id: request.location_id,
-                            leave_type: request.leave_type
+                } else if (event.event_type === 'HCM_CREDIT') {
+                    // For CREDIT, we check if an audit log for this cancellation already exists
+                    const existingAudit = await this.auditLogRepo.findOne({
+                        where: {
+                            reference_id: request.id,
+                            source: AuditSource.CANCELLATION
                         }
                     });
-                    if (balance) {
-                        const previousDays = Number(balance.balance_days);
-                        const creditedDays = Number(event.payload.daysRequested);
-                        const newDays = previousDays + creditedDays;
 
-                        balance.balance_days = newDays;
-                        await this.balanceRepo.save(balance);
+                    if (!existingAudit) {
+                        const balance = await this.balanceRepo.findOne({
+                            where: { 
+                                tenant_id: request.tenant_id, 
+                                employee_id: request.employee_id,
+                                location_id: request.location_id,
+                                leave_type: request.leave_type
+                            }
+                        });
+                        if (balance) {
+                            const previousDays = Number(balance.balance_days);
+                            const creditedDays = Number(event.payload.daysRequested);
+                            const newDays = previousDays + creditedDays;
 
-                        await this.auditLogRepo.save(this.auditLogRepo.create({
-                            tenant_id: request.tenant_id,
-                            employee_id: request.employee_id,
-                            location_id: request.location_id,
-                            leave_type: request.leave_type,
-                            previous_days: previousDays,
-                            new_days: newDays,
-                            delta: creditedDays,
-                            source: AuditSource.CANCELLATION,
-                            reference_id: request.id,
-                            actor: 'SYSTEM',
-                        }));
+                            balance.balance_days = newDays;
+                            await this.balanceRepo.save(balance);
+
+                            await this.auditLogRepo.save(this.auditLogRepo.create({
+                                tenant_id: request.tenant_id,
+                                employee_id: request.employee_id,
+                                location_id: request.location_id,
+                                leave_type: request.leave_type,
+                                previous_days: previousDays,
+                                new_days: newDays,
+                                delta: creditedDays,
+                                source: AuditSource.CANCELLATION,
+                                reference_id: request.id,
+                                actor: 'SYSTEM',
+                            }));
+                        }
                     }
                 }
                 await this.requestRepo.save(request);

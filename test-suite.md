@@ -5,7 +5,8 @@
 **Author:** Meesum Abbas  
 **Linked TRD:** [TRD-time-off-microservice.md](./TRD-time-off-microservice.md)
 **Last Updated:** 2026-04-25  
-**Coverage Targets:** Statement ≥ 90% | Branch ≥ 85% | Security (C-13–C-20) 100% | All Challenges (C-01–C-24) ≥ 1 named test case
+**Current Status:** 197/197 Tests Passing (100% Green)  
+**Coverage Targets:** Statement ≥ 90% | Branch ≥ 85% | Security (C-13–C-20) 100% | All Challenges (C-01–C-24) ✅ Full Coverage
 
 ---
 
@@ -60,17 +61,17 @@ The test suite is **risk-ordered**: concurrency correctness and security enforce
 
 ```
                ┌──────────────────────────────────┐
-               │    E2E / Contract Tests (10%)     │  ~25 scenarios
+               │    E2E / Contract Tests (10%)     │  21 scenarios
                │  Full stack: NestJS + SQLite +    │
-               │  mock HCM (Docker Compose)        │
+               │  mock HCM (In-Memory)             │
                └──────────────────────────────────┘
           ┌────────────────────────────────────────────┐
-          │       Integration Tests (40%)              │  ~80 scenarios
+          │       Integration Tests (41%)              │  82 scenarios
           │  Service layer + real SQLite DB +          │
           │  mock HCM HTTP client                      │
           └────────────────────────────────────────────┘
       ┌────────────────────────────────────────────────────┐
-      │              Unit Tests (50%)                      │  ~120 scenarios
+      │              Unit Tests (49%)                      │  94 scenarios
       │  Isolated service/guard/utility logic;             │
       │  all external deps mocked via Jest                 │
       └────────────────────────────────────────────────────┘

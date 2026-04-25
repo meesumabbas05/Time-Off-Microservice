@@ -304,7 +304,7 @@ describe('Sync & Outbox Flow (Integration)', () => {
         .post(`/sync/webhook/${tenantId}`)
         .set('x-hcm-signature', signature)
         .send(body)
-        .expect(409); // Conflict / Nonce replay
+        .expect(401); // Nonce replay now returns 401 to match TRD/E2E requirements
   });
 
   it('IT-SYN-006 — Batch sync webhook rejects HMAC mismatch (401)', async () => {
