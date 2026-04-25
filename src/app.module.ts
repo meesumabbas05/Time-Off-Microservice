@@ -10,6 +10,7 @@ import { TimeOffRequest } from './entities/time-off-request.entity';
 import { BalanceAuditLog } from './entities/balance-audit-log.entity';
 import { OutboxEvent } from './entities/outbox-event.entity';
 import { BalanceModule } from './balance/balance.module';
+import { TimeOffRequestModule } from './time-off-request/time-off-request.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { BalanceModule } from './balance/balance.module';
       // In production WAL mode should be explicitly set, e.g. via connection options or executing PRAGMA journal_mode=WAL
     }),
     BalanceModule,
+    TimeOffRequestModule,
   ],
   controllers: [AppController],
   providers: [AppService],
