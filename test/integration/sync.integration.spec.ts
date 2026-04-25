@@ -20,6 +20,7 @@ describe('Sync & Outbox Flow (Integration)', () => {
 
   const mockHcmClient = {
     getBalance: jest.fn(),
+    fetchBalances: jest.fn(),
     postRequest: jest.fn(),
     deduct: jest.fn(),
     credit: jest.fn(),
@@ -162,7 +163,13 @@ describe('Sync & Outbox Flow (Integration)', () => {
         balance_days: 5, hcm_last_synced: new Date()
     });
 
-    mockHcmClient.getBalance.mockResolvedValue({ days: 8.00, asOf: new Date().toISOString() });
+    mockHcmClient.fetchBalances.mockResolvedValue([{
+        employeeId: aliceId,
+        locationId: 'l1',
+        leaveType: 'VACATION',
+        days: 8.00,
+        asOf: new Date().toISOString()
+    }]);
 
     const token = generateTestToken(jwtService, { userId: adminId, tenantId: tenantId, role: UserRole.ADMIN });
 
@@ -186,7 +193,13 @@ describe('Sync & Outbox Flow (Integration)', () => {
         balance_days: 10, hcm_last_synced: new Date()
     });
 
-    mockHcmClient.getBalance.mockResolvedValue({ days: 7.00, asOf: new Date().toISOString() });
+    mockHcmClient.fetchBalances.mockResolvedValue([{
+        employeeId: aliceId,
+        locationId: 'l1',
+        leaveType: 'VACATION',
+        days: 7.00,
+        asOf: new Date().toISOString()
+    }]);
 
     const token = generateTestToken(jwtService, { userId: adminId, tenantId: tenantId, role: UserRole.ADMIN });
 

@@ -218,9 +218,9 @@ export class HcmSyncService {
     const records = await this.httpClient.fetchBalances(tenantId);
     let drifts = 0;
     for (const record of records || []) {
-      const { employee_id, location_id, leave_type, days } = record;
+      const { employeeId, locationId, leaveType, days } = record;
       const existing = await this.tenantRepo.manager.findOne(LeaveBalance, {
-        where: { tenant_id: tenantId, employee_id, location_id, leave_type }
+        where: { tenant_id: tenantId, employee_id: employeeId, location_id: locationId, leave_type: leaveType }
       });
       if (existing && Math.abs(existing.balance_days - days) > 0.01) {
         existing.balance_days = days;
