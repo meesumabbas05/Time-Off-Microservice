@@ -10,6 +10,7 @@ import { RolesGuard } from './roles/roles.guard';
 import { OwnershipGuard } from './ownership/ownership.guard';
 import { RateLimitGuard } from './rate-limit/rate-limit.guard';
 import { ClsService, TenantScopeInterceptor } from './tenant-scope/tenant-scope.interceptor';
+import { AuthController } from './auth.controller';
 
 @Global()
 @Module({
@@ -21,6 +22,7 @@ import { ClsService, TenantScopeInterceptor } from './tenant-scope/tenant-scope.
       signOptions: { expiresIn: '1h' },
     }),
   ],
+  controllers: [AuthController],
   providers: [
     ClsService,
     JwtAuthGuard,

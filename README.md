@@ -21,7 +21,26 @@ A resilient, multi-tenant microservice for managing employee time-off requests. 
 
 ---
 
-## ⚙️ Local Setup
+## 🐳 Docker Setup (Recommended)
+
+The easiest way to run the entire system (TOMS + Mock HCM) is using Docker. This ensures all dependencies and networking are pre-configured.
+
+### 1. Build and Start
+```bash
+docker-compose up --build
+```
+This command will:
+- Build the TOMS microservice image.
+- Start the TOMS server at `http://localhost:3000`.
+- Start the Mock HCM service at `http://localhost:4000`.
+- Initialize a persistent SQLite database in a Docker volume.
+
+### 2. Configuration
+The `docker-compose.yml` comes with sensible defaults. If you need to override them, you can create a `.env` file (see `.env.example`).
+
+---
+
+## ⚙️ Local Setup (Manual)
 
 ### 1. Installation
 ```bash
@@ -111,6 +130,72 @@ npm run test:e2e  # End-to-End tests
 - `GET /balance/:employeeId`: Get current balance for an employee.
 - `POST /sync/webhook/:tenantId`: Inbound batch sync from HCM (Requires HMAC Signature).
 - `POST /sync/trigger/:tenantId`: Manually trigger a spot-refresh for the current tenant.
+
+---
+
+## 🚀 Manual Testing (Postman/cURL)
+
+After starting the system with Docker and seeding the database (`npm run seed`), you can use the following steps to try out the features.
+
+### 1. Authenticate
+Get a JWT token by "logging in" as one of the seeded users (e.g., Alice).
+- **Endpoint**: `POST /auth/login`
+- **Body**:
+  ```json
+  { "email": "alice@example.com" }
+  ```
+- **Action**: Copy the `access_token` from the response and use it as a **Bearer Token** in the following requests.
+
+### 2. Check Balance
+Check how many days of vacation Alice has.
+- **Endpoint**: `GET /balance/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?tenantId=11111111-1111-1111-1111-111111111111&locationId=LOC1&leaveType=VACATION`
+- **Headers**: `Authorization: Bearer <token>`
+
+### 3. Submit a Time-Off Request
+Alice submits a request for 2 days.
+- **Endpoint**: `POST /requests`
+- **Headers**: `Authorization: Bearer <token>`
+- **Body**:
+  ```json
+  {
+    "locationId": "LOC1",
+    "leaveType": "VACATION",
+    "startDate": "2024-06-01",
+    "endDate": "2024-06-02",
+    "timezone": "UTC"
+  }
+  ```
+
+### 4. Approve the Request (As Manager)
+1. Login as Bob (`bob@example.com`) to get his token.
+2. Approve the request submitted by Alice.
+- **Endpoint**: `PATCH /requests/<request_id>/approve`
+- **Headers**: `Authorization: Bearer <bob_token>`
+- **Body**:
+  ```json
+  { "managerId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" }
+  ```
+
+### 5. Simulate HCM Webhook Sync
+Manually trigger a balance update from the HCM.
+- **Endpoint**: `POST /sync/webhook/11111111-1111-1111-1111-111111111111`
+- **Headers**: `x-hcm-signature: <any_string_for_test>`
+- **Body**:
+  ```json
+  {
+    "tenantId": "11111111-1111-1111-1111-111111111111",
+    "nonce": "test-nonce",
+    "records": [
+      {
+        "employeeId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "locationId": "LOC1",
+        "leaveType": "VACATION",
+        "days": 15.0,
+        "asOf": "2024-01-01T00:00:00Z"
+      }
+    ]
+  }
+  ```
 
 ---
 
